@@ -4,6 +4,8 @@
 
 [TOC]
 
+### 符号说明
+
 ### 0.前言
 
 ### 1.简介
@@ -83,7 +85,7 @@ void ImageProcessor::twoPointRansac(
     vector<int>& inlier_markers)
 ```
 整个函数的基本流程如下:
-![twoPointRansac](imgs/twoPointRansac.png)
+![twoPointRansac](../imgs/twoPointRansac.png)
 下面我们来详细讲解一下RANSAC模型及原理依据:
 我们由对极几何可以知道有以下约束:
 $$
@@ -260,6 +262,7 @@ float64 v1 # vertical coordinate in cam0
 
 　　在讲解之前,我们先来定义一下坐标系,如下图所示:
 ![coordinate](imgs/coordinate.png)
+
 其中$I$表示IMU机体坐标系(Body Frame),$G$表示的是惯性系(Inertial Frame),$C$表示的是相机坐标系(Camera Frame).
 
 ​	作为一个滤波器,我们首先来看滤波器的状态向量,它包含两个部分,IMU状态和Camera状态:
@@ -268,24 +271,120 @@ $$
 _{G}^{I}\textbf{q}^{T} & \textbf{b}_{g}^{T} & ^{G}\textbf{v}_{I}^{T} & \textbf{b}_{a}^{T} & 
 ^{G}\textbf{p}_{I}^{T} & _{C}^{I}\textbf{q}^{T} & ^{I}\textbf{p}_{C}^{T} 
 \end{bmatrix}^{T}
+\tag{4.1}
 $$
-其中$_{G}^{I}\textbf{q}$表示的是从惯性系到机体IMU系的旋转变换, $^{G}\textbf{v}_{I}$和$^{G}\textbf{p}_{I}$分别表示机体在惯性系下的速度和位置,$\textbf{b}_{g}$和$\textbf{b}_{a}$分别代表IMU的bias,而$_{C}^{I}\textbf{q}$ 和$ ^{I}\textbf{p}_{C}$分别代表从相机坐标系到IMU坐标系的旋转与平移,其中以左相机为准. 但是我们注意到旋转实际上只有三个自由度,而且四元数必须是单位单位四元数,那这样额外的约束会使得协方差矩阵奇异,所以我们定义error IMU状态如下:
+其中$_{G}^{I}\textbf{q}​$表示的是从惯性系到机体IMU系的旋转变换, $^{G}\textbf{v}_{I}​$和$^{G}\textbf{p}_{I}​$分别表示机体在惯性系下的速度和位置,$\textbf{b}_{g}​$和$\textbf{b}_{a}​$分别代表IMU的bias,而$_{C}^{I}\textbf{q}​$ 和$ ^{I}\textbf{p}_{C}​$分别代表从相机坐标系到IMU坐标系的旋转与平移,其中以左相机为准. 但是我们注意到旋转实际上只有三个自由度,而且四元数必须是单位单位四元数,那这样额外的约束会使得协方差矩阵奇异,所以我们定义error IMU状态如下:
 $$
 \tilde{\textbf{x}}_{I}=\begin{bmatrix}
 _{G}^{I}\tilde{\theta }^{T} & \tilde{\textbf{b}}_{g}^{T} & ^{G}\tilde{\textbf{v}}_{I}^{T} & \tilde{\textbf{b}}_{a}^{T} & 
 ^{G}\tilde{\textbf{p}}_{I}^{T} & _{C}^{I}\tilde{\textbf{q}}^{T} & ^{I}\tilde{\textbf{p}}_{C}^{T} 
 \end{bmatrix}^{T}
+\tag{4.2}
 $$
 
-所以IMU的状态一共是$3\cdot7=21$维向量,后6维度其实是相机与IMU的外参,这6个维度在MSCKF1.0版本是不在状态向量里边的. MSCKF的状态向量还包含另外一个组成部分,那就是N个相机的姿态,那么每个相机的姿态误差向量定义为 $\tilde{\textbf{x}}_{C_{i}}=\left (   \begin{matrix}_{G}^{C_{i}}\tilde{\theta }^{T} & ^{G}\tilde{\textbf{p}}_{C_{i}}^{T}\end{matrix} \right )^T$,所以当滑窗里边有N个相机姿态的时候,整个误差状态向量为:
+所以IMU的状态一共是$3\cdot7=21​$维向量,后6维度其实是相机与IMU的外参,这6个维度在MSCKF1.0版本是不在状态向量里边的. MSCKF的状态向量还包含另外一个组成部分,那就是N个相机的姿态,那么每个相机的姿态误差向量定义为 $\tilde{\textbf{x}}_{C_{i}}=\left (   \begin{matrix}_{G}^{C_{i}}\tilde{\theta }^{T} & ^{G}\tilde{\textbf{p}}_{C_{i}}^{T}\end{matrix} \right )^T​$,所以当滑窗里边有N个相机姿态的时候,整个误差状态向量为:
 $$
 \tilde{\textbf{x}} = \begin{pmatrix}
 \tilde{\textbf{x}}_{I}^{T} & \tilde{\textbf{x}}_{C_{1}}^{T} & ... & \tilde{\textbf{x}}_{C_{N}}^{T}
 \end{pmatrix}
+\tag{4.3}
 $$
 我们以标准error-state KF为准,其过程包含运动模型和观测模型.
 
-#### 4.2三角化
+　　##### A.运动模型
+
+我们知道对于IMU的状态连续时间的运动学有:
+$$
+\begin{split}
+_{G}^{I}\dot{\hat{\textbf{q}}}=\frac{1}{2}\cdot_{G}^{I}\hat{\textbf{q}}\otimes\hat{w} =\frac{1}{2}\Omega (\hat{w})_{G}^{I}\hat{\textbf{q}},\\ 
+\dot{\hat{\textbf{b}}}_{g}=\textbf{0}_{3\times 1},\\ 
+^{G}\dot{\hat{\textbf{v}}}=C(_{G}^{I}\hat{\textbf{q}})^{T}\hat{\textbf{a}}+^{G}\textbf{g},\\
+\dot{\hat{\textbf{b}}}_{a}=\textbf{0}_{3\times 1},\\
+^{G}\dot{\hat{\textbf{p}}_{I}}=^{G}{\hat{\textbf{v}}},\\
+_{C}^{I}\dot{\hat{\textbf{q}}}=\textbf{0}_{3\times 1},\\
+^{I}\dot{\hat{\textbf{p}}_{C}}=\textbf{0}_{3\times 1}
+\end{split}\tag{4.4}
+$$
+其中 $\hat{w}​$ 和 $\hat{a}​$ 分别为角速度和加速度的估计值(测量值减去bias),即有:
+$$
+\hat{w}=w_{m}-\hat{b}_{g},\hat{a}=a_{m}-\hat{b}_{a}\tag{4.5}
+$$
+其中有几点要说明,其中,
+$$
+\Omega (\hat{w})=\Omega (\hat{w})=\begin{pmatrix}
+-[\hat{w}_{\times }] & w\\ 
+-w^{T} & 0
+\end{pmatrix}
+\tag{4.6}
+$$
+这个直接参考四元数乘法就可以了,然后 $[\hat{w}_{\times }]$ 是 $\hat{w}$的反对称矩阵; $C(\cdot)$表示四元数到旋转矩阵的转换,这个可以参照[1]和[2]. 那按照S-MSCKF的论文所述,我们可以得到以下式子,
+$$
+\dot{\tilde{\textbf{x}}}_{I}=\textbf{F}\tilde{\textbf{x}}_{I}+
+\textbf{G} \textbf{n}_{I}
+\tag{4.7}
+$$
+其中
+$$
+\textbf{n}_{I}^{T}=\begin{pmatrix}
+ \textbf{n}_{g}^{T}& \textbf{n}_{wg}^{T} & \textbf{n}_{a}^{T} & \textbf{n}_{wa}^{T}
+\end{pmatrix}^{T}
+\tag{4.8}
+$$
+$\textbf{n}_{g}$ 和 $\textbf{n}_{a}$ 分别代表角速度和加速度的测量噪声,服从高斯分布; $\textbf{n}_{wg}$ 和 $\textbf{n}_{wa}$ 分别代表角速度和加速度的bias的随机游走噪声. $\textbf{F} $ 是 $21\times21$ 大小矩阵, $\textbf{G}$ 是 $21\times12$ 大小的矩阵,其详细推到见附录A.
+
+　　对于IMU的状态来说,我们可以采用RK4的积分方法根据(4.4)求得IMU的状态. 那么对于IMU的协方差矩阵呢,我们需要事先求取状态转移矩阵和离散的运动噪声协方差矩阵,如下:
+$$
+\Phi_{k}=\Phi(t_{k+1},t_{k})=\textbf{exp}(\int_{t_{k}}^{t_{k+1}} \textbf{F}(\tau)d\tau) \\
+\textbf{Q}_{k}=\int_{t_{k}}^{t_{k+1}}\Phi({t_{k+1},\tau})\textbf{GQG}\Phi({t_{k+1},\tau})^{T}d\tau
+\tag{4.9}
+$$
+
+关于这个状态转移矩阵 $\Phi_{k}$ 的求法, 其实式子4.9是一个指数,指数项是一个积分项,当 $t_{k+1}$ 与 $t_{k}$ 间 $\Delta t$ 较小时候,可以得到这样的式子:
+$$
+\Phi_{k}=\Phi(t_{k+1},t_{k})=\textbf{exp}(\int_{t_{k}}^{t_{k+1}} \textbf{F}(\tau)d\tau) = \textbf{exp}(\textbf{F}\Delta t)= I+\textbf{F}\Delta t + \frac{1}{2!}(\textbf{F}\Delta t)^{2}+\frac{1}{3!}(\textbf{F}\Delta t)^{3}+...
+\tag{4.10}
+$$
+整个状态(IMU+Camera)的covariance传播过程如图所示:
+
+![imu_propagate](imgs/imu_propagate.png)
+
+那么对于左上角IMU的corvariance的传播有:
+$$
+\textbf{P}_{II_{k+1|k}}=\Phi_{k}\textbf{P}_{II_{k|k}}\Phi_{k}^{T}+\textbf{Q}_{k}
+\tag{4.11}
+$$
+其中Camera的covariance暂时还没有变化是因为这个时间段图像还没有到来,只有IMU的影响,但是会影响到IMU与Camera协方差,即上图灰色矩形块. 
+
+##### B. 增广
+
+　　当图像到来时,需要对当前相机姿态做增广,这个时刻的相机姿态是由上一时刻的IMU propagate的结果结合外参得到的:
+
+$$
+_{G}^{C}\hat{\textbf{q}}=_{I}^{C}\hat{\textbf{q}}\otimes _{G}^{I}\hat{\textbf{q}} \\
+^{G}\hat{\textbf{p}}_{C} = ^{G}\hat{\textbf{p}}_{I} + C(_{G}^{I}\hat{\textbf{q}})^{T} \cdot{^{I}\hat{\textbf{p}}_{C}}
+\tag{4.12}
+$$
+假设上一时刻共有N个相机姿态在状态向量中,那么当新一帧图像到来时,这个时候整个滤波器的状态变成了$21+6(N+1)$的向量, 那么它对应的covariance维度变为 $(21+6(N+1))\times(21+6(N+1))$ .其数学表达式为:
+$$
+\textbf{P}_{k|k}=\begin{pmatrix}
+\textbf{I}_{21+6N}\\ 
+\textbf{J}
+\end{pmatrix}\textbf{P}_{k|k}\begin{pmatrix}
+\textbf{I}_{21+6N}\\ 
+\textbf{J}
+\end{pmatrix}^{T}
+$$
+这个过程对应如下图过程:
+
+![covariance_propagate](imgs/covariance_augmentation.png)
+
+其中$J$ 的详细推导过程见附录B.
+
+##### C.观测模型
+
+
+
+4.2三角化
 
 #### 4.2 能观测性分析
 
@@ -297,9 +396,17 @@ $$
 
 #### A. F矩阵和G矩阵的推导
 
-#### B. H矩阵
+![msckf](imgs/msckf_F_G_1.png)
 
-#### C. 三种常用积分方式:欧拉,中值,RK4积分
+![msckf](imgs/msckf_F_G_2.png)
+
+![msckf](imgs/msckf_F_G_3.png)
+
+#### B. $J_{I}$的计算
+
+#### C. H矩阵
+
+#### D. 三种常用积分方式:欧拉,中值,RK4积分
 
 ### 7.参考文献
 
