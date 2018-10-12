@@ -85,7 +85,7 @@ void ImageProcessor::twoPointRansac(
     vector<int>& inlier_markers)
 ```
 整个函数的基本流程如下:
-![twoPointRansac](../imgs/twoPointRansac.png)
+![twoPointRansac](imgs/twoPointRansac.png)
 下面我们来详细讲解一下RANSAC模型及原理依据:
 我们由对极几何可以知道有以下约束:
 $$
@@ -373,6 +373,7 @@ $$
 \textbf{I}_{21+6N}\\ 
 \textbf{J}
 \end{pmatrix}^{T}
+\tag{4.13}
 $$
 这个过程对应如下图过程:
 
@@ -382,13 +383,75 @@ $$
 
 ##### C.观测模型
 
+　　MSCKF的观测模型是以特征点为分组的,我们可以知道一个特征(之前一直处于跟踪成功状态)会拥有多个Camera State.所有这些对于同一个3D点的Camera State都会去约束观测模型. 那这样其实隐式的将特征点位置从状态向量中移除,取而代之的便是Camera State. 我们考虑单个feture $f_{j}$, 假设它所对应到 $M_{j}$ 个相机姿态 $(_{G}^{C_{i}}\textbf{q}, ^{G}\textbf{p}_{C_{i}}), i \in j$. 当然双目版本的包含左目和右目两个相机姿态, $(_{G}^{C_{i,1}}\textbf{q}, ^{G}\textbf{p}_{C_{i,1}})$ 和 $(_{G}^{C_{i,2}}\textbf{q}, ^{G}\textbf{p}_{C_{i,2}})$ 右相机很容易能通过外参得到. 其中双目的观测值可以表示如下:
+$$
+\textbf{z}^{j}_{i}=\begin{pmatrix}
+u^{j}_{i,1}\\ 
+v^{j}_{i,1}\\ 
+u^{j}_{i,2}\\ 
+v^{j}_{i,2}
+\end{pmatrix}
+= \begin{pmatrix}
+\frac{1}{^{C_{i,1}}Z_{j}} & \textbf{0}_{2\times 2} \\ 
+\textbf{0}_{2\times 2} & \frac{1}{^{C_{i,2}}Z_{j}}
+\end{pmatrix}
+\begin{pmatrix}
+\frac{1}{^{C_{i,1}}X_{j}}\\ 
+\frac{1}{^{C_{i,1}}Y_{j}}\\ 
+\frac{1}{^{C_{i,2}}X_{j}}\\ 
+\frac{1}{^{C_{i,2}}Y_{j}}
+\end{pmatrix}
+\tag{4.14}
+$$
+而特征点在两个相机坐标系下可以分别表示为:
+$$
+\begin{split}
+^{C_{i,1}}\textbf{p}_{j}=\begin{pmatrix}
+^{C_{i,1}}X_{j}\\ 
+^{C_{i,1}}Y_{j}\\ 
+^{C_{i,1}}Z_{j}
+\end{pmatrix}
+= C(^{C_{i,1}}_{G} \textbf{q})(^{G}\textbf{p}_{j}-^{G}\textbf{p}_{C_{i,1}})\\
+^{C_{i,2}}\textbf{p}_{j}=\begin{pmatrix}
+^{C_{i,2}}X_{j}\\ 
+^{C_{i,2}}Y_{j}\\ 
+^{C_{i,2}}Z_{j}
+\end{pmatrix}
+= C(^{C_{i,2}}_{G} \textbf{q})(^{G}\textbf{p}_{j}-^{G}\textbf{p}_{C_{i,2}})\\
+=C(^{C_{i,2}}_{C_{i,1}} \textbf{q})(^{C_{i,1}}\textbf{p}_{j}-^{C_{i,1}}\textbf{p}_{C_{i,2}})
+\end{split}
+\tag{4.15}
+$$
+其中 $^{G}\textbf{p}_{j}$ 是特征点在惯性系下的坐标,这个是通过这个特征点的对应的所有camera state三角化得到的结果. 将观测模型在当前状态线性化可以得到如下式子:
+$$
+\textbf{r}^{j}_{i}=\textbf{z}^{j}_{i}-\hat{\textbf{z}}^{j}_{i}=
+\textbf{H}^{j}_{C_{i}}\tilde{\textbf{x}}_{C_{i}}+ \textbf{H}^{j}_{f_{i}}\tilde{\textbf{p}}_{j}+\textbf{n}^{j}_{i}
+\tag{4.16}
+$$
+其中 $\textbf{n}^{j}_{i}$是观测噪声, $\textbf{H}^{j}_{C_{i}}$和 $\textbf{H}^{j}_{f_{i}}$ 是对应的雅克比矩阵.其详细推导和解析见附录C. 式子(4.16)对应到的是单个特征点对应的其中某一个相机姿态, 但是这个特征点会对应到很多相机姿态,我们直接将它贴在后边可以得到一个特征点的残差模型为:
+$$
+\textbf{r}^{j}=
+\textbf{H}^{j}_{\textbf{x}}\tilde{\textbf{x}}+ {\color{Red} \textbf{H}^{j}_{f}\tilde{\textbf{p}}_{j}}+\textbf{n}^{j}
+\tag{4.17}
+$$
+但是这个其实并不是一个标准的EKF观测模型,因为我们知道 $\tilde{\textbf{p}}_{j}$ 并不在我们的状态向量里边,所以做法是将式子(4.17)中红色部分投影到零空间, 假设 $\textbf{H}^{j}_{f}$ 的[left null space](https://blog.csdn.net/liuheng0111/article/details/52522845) 为$\textbf{V}^{T}$, 即有$\textbf{V}^{T}\textbf{H}^{j}_{f}=\textbf{0}$, 所以式(4.17)可有写成:
+$$
+\textbf{r}_{o}^{j}=
+\textbf{V}^{T}\textbf{H}^{j}_{\textbf{x}}\tilde{\textbf{x}}+\textbf{V}^{T}\textbf{n}^{j}=\\
+\textbf{H}^{j}_{\textbf{x,o}}\tilde{\textbf{x}}+\textbf{n}^{j}_{o}
+\tag{4.18}
+$$
+式(4.18)则是一个标准的EKF观测模型了,下面简单分析一下维度.
 
+#### 4.2三角化
 
-4.2三角化
-
-#### 4.2 能观测性分析
+#### 4.3 能观测性分析
 
 ### 5.S-MSCKF代码流程
+
+　　这里放一张之前做的图,清晰图片从这里[下载](下载地址).另外中文注释版本的代码在[这里](这里放github链接)
+
+![msckf_vio](imgs/msckf_vio.jpg)
 
 ### 6.总结
 
