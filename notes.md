@@ -10,7 +10,7 @@
 
 ### 1.简介
 
-　　MSCKF (Multi-State Constraint Kalman Filter),从2007年提出至今,一直是filter-based SLAM比较经典的实现.据说这也是谷歌tango里面的算法，这要感觉Mingyang Li博士在MSCKF的不懈工作。在传统的EKF-SLAM框架中，特征点的信息会加入到特征向量和协方差矩阵里,这种方法的缺点是特征点的信息会给一个初始深度和初始协方差，如果不正确的话，极容易导致后面不收敛，出现inconsistent的情况。MSCKF维护一个pose的FIFO，按照时间顺序排列，可以称为滑动窗口，一个特征点在滑动窗口的几个位姿都被观察到的话，就会在这几个位姿间建立约束，从而进行KF的更新。
+　　MSCKF (Multi-State Constraint Kalman Filter),从2007年提出至今,一直是filter-based SLAM比较经典的实现.据说这也是谷歌tango里面的算法，这要感谢Mingyang Li博士在MSCKF的不懈工作。在传统的EKF-SLAM框架中，特征点的信息会加入到特征向量和协方差矩阵里,这种方法的缺点是特征点的信息会给一个初始深度和初始协方差，如果不正确的话，极容易导致后面不收敛，出现inconsistent的情况。MSCKF维护一个pose的FIFO，按照时间顺序排列，可以称为滑动窗口，一个特征点在滑动窗口的几个位姿都被观察到的话，就会在这几个位姿间建立约束，从而进行KF的更新。
 
 ### 2.前端
 　　本文主要针对2017年Kumar实验室开源的S-MSCKF进行详细分析,其实这篇文章整体思路与07年提出的基本上是一脉相承的.作为一个VIO的前端,MSCKF采用的是光流跟踪特征点的方法,特征点使用的是FAST特征,另外这是MSCKF双目的一个实现,双目之间的特征点匹配采用的也是光流,这与传统的基于descriptor匹配的方法不同.前端部分其实相对简单,整个前端部分基本在 **image_processor.cpp**中实现.
@@ -441,11 +441,25 @@ $$
 \textbf{H}^{j}_{\textbf{x,o}}\tilde{\textbf{x}}+\textbf{n}^{j}_{o}
 \tag{4.18}
 $$
-式(4.18)则是一个标准的EKF观测模型了,下面简单分析一下维度.
+式(4.18)则是一个标准的EKF观测模型了,下面简单分析一下维度.分析时针对单个特征点, 我们知道 $\textbf{H}^{j}_{f}$ 的维度是 $4M_{j}\times 3 $, 那么它的left null space的维度即$\textbf{V}^{T}$ 的维度为 $(4\textbf{M}_{j} - 3)\times 4\textbf{M}_{j}$, 则最终 $\textbf{H}^{j}_{\textbf{x,o}}\tilde{\textbf{x}}$的维度变为 $(4\textbf{M}_{j} - 3)\times 6$, 残差的维度变为 $(4\textbf{M}_{j} - 3)\times 1$, 假设一共有L个特征的话,那最终残差的维度会是 $L(4\textbf{M}_{j} - 3)\times 1$. 更多详细的代码细节见给到的注释版代码,然后H矩阵的详细推导见附录C.
 
-#### 4.2三角化
+#### 4.2 三角化
 
 #### 4.3 能观测性分析
+
+　　<font color=red>关于能观性分析,我个人感觉公式太多了,并且没有想到一个很好的描述方式,理解的也不算太透彻,所以这里还希望有大佬能把这部分写一下,或者单独写一个专题,我觉得那是极好的.</font> 
+
+　　另外开源版本的S-MSCKF用的是OC-EKF, 这个主要参考了这两篇论文 [Consistency Analysis and IMprovement of Vision-aided Inertial Navigation](http://xueshu.baidu.com/s?wd=paperuri:(f308abb33c5a80cd81f674dff09513a2)&filter=sc_long_sign&sc_ks_para=q%3DConsistency+Analysis+and+Improvement+of+Vision-aided+Inertial+Navigation&tn=SE_baiduxueshu_c1gjeupa&ie=utf-8&sc_us=13835246309820327221) 和 [On the consistency of Vision-aided Inertial Navigation](http://xueshu.baidu.com/s?wd=paperuri:(c1627c8837b2165d335c77f39de88f7d)&filter=sc_long_sign&sc_ks_para=q%3DOn+the+Consistency+of+Vision-Aided+Inertial+Navigation&tn=SE_baiduxueshu_c1gjeupa&ie=utf-8&sc_us=7890470351829265780). 代码中的实现主要参考了第二篇的给出的公式,我在注释里应该都有注明.
+
+#### 4.4 滤波器更新机制
+
+　　大致是有两种更新策略,假设新进来一帧图像,这个时候会丢失一些特征点,这个时候丢失的特征点(且三角化成功)用于滤波器更新,如下图所示:
+
+![update1](imgs/update1.png)
+
+那当然随着时间的推移,相机状态会越来越多,这个时候呢, 相机状态会有一个阈值,也就是滑窗的上限, S-MSCKF与msckf1.0有稍微不同,它是当满了之后每次迭代的清除两个,最新的这个状态肯定保持, 清除依据就是帧间的旋转跟位移大小,如下图所示,假设Slide Window的大小正好为7,且已经经过了上面的update过程,那么这个时候还会再update一次,这个时候它的所有特征都会用于更新.因为要移除两个camera state,所以对应的状态和covariance也都需要剔除掉.所以删掉的两个状态其实肯定处于紫色框其中的两个.
+
+![update2](imgs/update2.png)
 
 ### 5.S-MSCKF代码流程
 
@@ -472,6 +486,12 @@ $J_{I}$ 的计算与正文有点出入,但还是先贴上来了,希望哪位大�
 ![JI](imgs/JI.png)
 
 #### C. H矩阵
+
+![H1](imgs/H1.png)
+
+![H2](imgs/H2.png)
+
+![H3](imgs/H3.png)
 
 #### D. 三种常用积分方式:欧拉,中值,RK4积分
 
