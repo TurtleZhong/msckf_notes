@@ -6,9 +6,38 @@
 
 ### 0.前言
 
+　　#### 0.1 我为什么写这个?
+
+　　一方面是对自己看过的东西做一个简单的总结,之前也看过一些其他的,但都没有系统的成文,因为时间比较紧张, 科研压力比较大.另外一方面是向各位大佬们学习,希望能得到大佬们的指导, 同时希望对刚入门SLAM和已经入门一段时间的SLAM小伙伴一点干货. 结交一些志同道合的小伙伴!
+
+#### 0.2 可爱的您能得到什么?
+
+　　如果您正在研究MSCKF或者对VIO很感兴趣,那么您将得到以下几件东西:
+
+(1) [一份看了不会亏的MSCKF的入门指南](http://www.xinliang-zhong.com/msckf_notes/)
+
+(2) 基本我自己推导过的一本书(或者叫比较长的论文) [Quaternion kinematics for the error-state Kalman filter](https://github.com/TurtleZhong/msckf_mono)
+
+(3) [一份注释过的开源版本的代码](https://github.com/TurtleZhong/msckf_mono)
+
+　　如果您是已经最MSCKF及其熟悉的大佬,那么您将得到:
+
+其实我也还没想好您能得到什么,我倒是很想从您那得到一些东西...
+
+#### 0.3 我希望可爱的您反馈什么?
+
+(1) 全文一些描述有误的地方,因为自己写东西比较随意,难免有大家理解起来有问题或者本身就描述不对的地方.
+
+(2) 反馈网址戳 [这里](https://github.com/TurtleZhong/msckf_mono/issues), 可爱的您一定会随手在github留下小星星对不对? 不方便公共留言的话可以邮箱私聊我.
+
+(3) 交个朋友? 江湖有缘相见. 祝可爱的您科研顺利,一夜暴富!!!
+
 ### 1.简介
 
-　　MSCKF (Multi-State Constraint Kalman Filter),从2007年提出至今,一直是filter-based SLAM比较经典的实现.据说这也是谷歌tango里面的算法，这要感谢Mingyang Li博士在MSCKF的不懈工作。在传统的EKF-SLAM框架中，特征点的信息会加入到特征向量和协方差矩阵里,这种方法的缺点是特征点的信息会给一个初始深度和初始协方差，如果不正确的话，极容易导致后面不收敛，出现inconsistent的情况。MSCKF维护一个pose的FIFO，按照时间顺序排列，可以称为滑动窗口，一个特征点在滑动窗口的几个位姿都被观察到的话，就会在这几个位姿间建立约束，从而进行KF的更新。
+　　MSCKF (Multi-State Constraint Kalman Filter),从2007年提出至今,一直是filter-based SLAM比较经典的实现.据说这也是谷歌tango里面的算法，这要感谢Mingyang Li博士在MSCKF的不懈工作。在传统的EKF-SLAM框架中，特征点的信息会加入到特征向量和协方差矩阵里,这种方法的缺点是特征点的信息会给一个初始深度和初始协方差，如果不正确的话，极容易导致后面不收敛，出现inconsistent的情况。MSCKF维护一个pose的FIFO，按照时间顺序排列，可以称为滑动窗口，一个特征点在滑动窗口的几个位姿都被观察到的话，就会在这几个位姿间建立约束，从而进行KF的更新。如下图所示, 左边代表的是传统EKF SLAM, 红色五角星是old feature,这个也是保存在状态向量中的,另外状态向量中只保存最新的相机姿态; 中间这张可以表示的是keyframe-based SLAM, 它会保存稀疏的关键帧和它们之间相关联的地图点; 最右边这张则可以代表MSCKF的一个基本结构, MSCKF中老的地图点和滑窗之外的相机姿态是被丢弃的, 它只存了滑窗内部的相机姿态和它们共享的地图点.
+
+![comparation](imgs/comparation.png)
+
 #### 符号说明
 $\dot{\textbf{x}}$ 表示微分
 
@@ -509,7 +538,7 @@ $J_{I}$ 的计算与正文有点出入,但还是先贴上来了,希望哪位大�
 
 ![H3](imgs/H3.png)
 
-#### D. 三种常用积分方式:欧拉,中值,RK4积分
+#### D. 三种常用数值积分方式:欧拉,中值,RK4积分
 
 　　这部分其实比较简单, 大家也可以参考 参考文献1中附录A部分,也讲的很详细.这里简单附上三张图,分别对应三种积分方式.
 
@@ -535,7 +564,9 @@ $J_{I}$ 的计算与正文有点出入,但还是先贴上来了,希望哪位大�
 
 (7) [A multi-state constraint Kalman filter for vision-aided inertial navigation](http://xueshu.baidu.com/s?wd=paperuri:(fc81955af6e11c8b7d738d8ef94b512d)&filter=sc_long_sign&sc_ks_para=q%3DA+Multi-State+Constraint+Kalman+Filter+for+Vision-aided+Inertial+Navigation&tn=SE_baiduxueshu_c1gjeupa&ie=utf-8&sc_us=10867325448677835818)
 
+(8) [视觉SLAM十四讲](https://baike.baidu.com/item/%E8%A7%86%E8%A7%89SLAM%E5%8D%81%E5%9B%9B%E8%AE%B2/20786239?fr=aladdin)
 
+(9)  [卡尔曼滤波与组合导航原理](https://baike.baidu.com/item/%E5%8D%A1%E5%B0%94%E6%9B%BC%E6%BB%A4%E6%B3%A2%E4%B8%8E%E7%BB%84%E5%90%88%E5%AF%BC%E8%88%AA%E5%8E%9F%E7%90%86/12130448?fr=aladdin)
 
 
 
