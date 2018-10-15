@@ -488,6 +488,119 @@ $$
 
 #### 4.2 三角化
 
+　　三角化是通过多帧相机对同一个点的观测计算出特征点在世界坐标系下的绝对3D坐标,或者你可以认为是恢复出一个比较可靠的3D点. 在讲这个之前,我们先来简单过一下相机的投影模型, 假设相机图像已经去畸变了,那么我们很容易得到这样一个模型:
+$$
+\begin{bmatrix}
+u\\ 
+v
+\end{bmatrix}
+=h\begin{pmatrix}
+X/Z\\ 
+Y/Z
+\end{pmatrix}=
+\begin{bmatrix}
+f_{x} & 0\\ 
+0 & f_{y}
+\end{bmatrix}
+\begin{bmatrix}
+X/Z\\ 
+Y/Z
+\end{bmatrix}
++\begin{bmatrix}
+c_{x}\\ 
+c_{y}
+\end{bmatrix}
+\tag{4.19}
+$$
+其中(X,Y,Z)为相机坐标系下的一个点. 我们再来看下图:
+
+![triangulation](imgs/triangulation.png)
+
+其中在惯性系下 $^{G}\hat{\textbf{p}}_{f}$ 被多帧相机观测到,其中在每个相机下的坐标表示为 $^{C_{i}}\textbf{p}_{f} = (^{C_{i}}X, ^{C_{i}}Y, ^{C_{i}}Z)^{T}$, 假设该特征第一个观测为 $^{C_{0}}\textbf{p}$, 余数在第 $i$个相机帧中可以表示为:
+$$
+^{C_{i}}\textbf{p}_{f} = ^{C_{i}}_{C_{0}}\textbf{R}^{C_{0}}\textbf{p}_{f} + ^{C_{i}}\textbf{p}_{C_{0}}
+\tag{4.20}
+$$
+我们将这个转换为逆深度的表达形式,可以得到下面一系列式子:
+$$
+^{C_{i}}\textbf{p}_{f} = ^{C_{i}}_{C_{0}}\textbf{R}
+\begin{bmatrix}
+^{C_{0}}X\\ 
+^{C_{0}}Y\\ 
+^{C_{0}}Z
+\end{bmatrix}
+ + ^{C_{i}}\textbf{p}_{C_{0}}\\
+=^{C_{0}}Z(^{C_{i}}_{C_{0}}\textbf{R}
+\begin{bmatrix}
+^{C_{0}}X / ^{C_{0}}Z\\ 
+^{C_{0}}Y/ ^{C_{0}}Z \\
+1
+\end{bmatrix}+
+\frac{1}{^{C_{0}}Z} \cdot ^{C_{i}}\textbf{p}_{C_{0}}
+)\\
+=\frac{1}{\rho } \textbf{g}_{i}(^{C_{i}}_{C_{0}}\textbf{R}
+\begin{bmatrix}
+\alpha \\ 
+\beta \\ 
+1 
+\end{bmatrix}+\rho ^{C_{i}}\textbf{p}_{C_{0}}
+)\\
+=\frac{1}{\rho }\textbf{g}_{i}(\begin{bmatrix}
+\alpha \\ 
+\beta \\ 
+\rho 
+\end{bmatrix})
+=\frac{1}{\rho }\textbf{g}_{i}(\theta)
+\tag{4.21}
+$$
+其中$\theta$ 为参数, $\alpha=^{C_{0}}X/^{C_{0}}Z$, $\beta=^{C_{0}}Y/^{C_{0}}Z$, $\rho=1/^{C_{0}}Z$.
+
+并且这个假设我们的$^{C_{i}}\textbf{p}_{f}$ 为$(^{C_{i}}X / ^{C_{i}}Z, ^{C_{i}}Y/^{C_{i}}Z)^{T})$, 那么就是说$g_{i}(\theta)$是一个3维输入,二维输出的函数. 所以误差函数可以写成:
+$$
+f_{i}(\theta)=\textbf{z}_{i}-h(g_{i}(\theta))
+\tag{4.22}
+$$
+假设一共共有N个相机观测,那么我们可以构建一个最小二乘问题,形如下式:
+$$
+arg\:  min\sum_{i=1}^{n}\left \| f_{i}(\theta) \right \|_{2}
+\tag{4.23}
+$$
+其中对应于单个特征点的$Jocabian$形式如下:
+$$
+J_{f}=\frac{\partial f }{\partial \theta}=\frac{\partial h }{\partial g}\frac{\partial g }{\partial \theta}
+\tag{4.24}
+$$
+其中第一项 $\frac{\partial f }{\partial g}$非常简单,就是参考式(4,19), 得到的结果第比较简单,第二部分$\frac{\partial g}{\partial \theta}$ 根据式子(4.21)可以很容易得到
+$$
+\frac{\partial g}{\partial \theta}=\begin{bmatrix}
+\frac{\partial g_{i}}{\partial \alpha} & \frac{\partial g_{i}}{\partial \beta} & \frac{\partial g_{i}}{\partial \rho}
+\end{bmatrix}\\
+=
+[^{C_{i}}_{C_{0}}R\begin{bmatrix}
+1\\ 
+0\\ 
+0
+\end{bmatrix},\:  ^{C_{i}}_{C_{0}}R\begin{bmatrix}
+0\\ 
+1\\ 
+0
+\end{bmatrix},\;  ^{C_{i}}\textbf{p}_{C_{0}}]
+\tag{4.25}
+$$
+然后用高斯-牛顿法就可以红容易解决这个最小二乘问题. 最后能得到$\hat{\theta}=[\hat{\alpha}, \hat{\beta}, \hat\rho]$, 那么其实也就是特征点在首个观测到它的相机帧下的坐标,根据下面的式子则很容易恢复出惯性系下的特征点的位置:
+$$
+^{G}\hat{\textbf{p}}_{f}=\frac{1}{\hat{\rho}} \: ^{G}_{C_{0}}\textbf{R}\begin{bmatrix}
+\hat{\alpha}\\ 
+\hat{\beta}\\ 
+1
+\end{bmatrix}
++ ^{G}\textbf{p}_{C_{0}}
+\tag{4.26}
+$$
+注意,代码中的实现和现在这个推到稍微有点出入,它的实现主要参考的是文献7,不过基本大同小异,大家阅读起来应该也不会有太大的阻碍.
+
+
+
 #### 4.3 能观测性分析
 
 　　<font color=red>关于能观性分析,我个人感觉公式太多了,并且没有想到一个很好的描述方式,理解的也不算太透彻,所以这里还希望有大佬能把这部分写一下,或者单独写一个专题,我觉得那是极好的.</font> 
