@@ -1,6 +1,7 @@
 ## <center>一步步深入了解S-MSCKF</center>
 <p align="right">作者:钟心亮</p>
 <p align="right">联系方式:xinliangzhong@foxmail.com</p>
+<p align="right">Github:https://github.com/TurtleZhong</p>
 
 [TOC]
 
@@ -14,7 +15,7 @@
 
 　　如果您正在研究MSCKF或者对VIO很感兴趣,那么您将得到以下几件东西:
 
-(1) [一份看了不会亏的MSCKF的入门指南](http://www.xinliang-zhong.com/msckf_notes/)
+(1) [一份看了不会亏的MSCKF的入门指南](http://www.xinliang-zhong.vip/msckf_notes/)
 
 (2) 基本我自己推导过的一本书(或者叫比较长的论文) [Quaternion kinematics for the error-state Kalman filter](https://github.com/TurtleZhong/msckf_mono)
 
@@ -619,7 +620,7 @@ $$
 
 ### 5.S-MSCKF代码流程
 
-　　这里放一张之前做的图,清晰图片从这里[下载](下载地址).另外中文注释版本的代码在[这里](这里放github链接)
+　　这里放一张之前做的图,清晰图片从这里[下载](https://github.com/TurtleZhong/msckf_mono/blob/master/msckf_vio.jpg).另外中文注释版本的代码在[这里](https://github.com/TurtleZhong/msckf_mono)
 
 ![msckf_vio](imgs/msckf_vio.jpg)
 
